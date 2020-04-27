@@ -28,8 +28,7 @@ class BaseRepository {
             throw new Error(error);
         }
         return true;
-    }
-
+    }    
     async query(params) {
         const request = {
             TableName: this.table,
