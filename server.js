@@ -1,9 +1,8 @@
 const express = require('express');
 const expressPlayground = require('graphql-playground-middleware-express').default;
 const { ApolloServer } = require('apollo-server-express');
-const { apolloUploadExpress } = require('apollo-upload-server');
 const fileUpload = require('express-fileupload');
-const { typeDefs, resolvers } = require('./graphql/Employee.js');
+const { typeDefs, resolvers } = require('./graphql/Post.js');
 
 const PORT = process.env.PORT || 4000;
 // Create an express server and a GraphQL endpoint
@@ -15,8 +14,7 @@ const server = new ApolloServer({
     path: '/graphql'
 });
 server.applyMiddleware({ app });
-app.get('/playground',    
-   apolloUploadExpress({ maxFileSize: 10000000, maxFiles: 10 }),
+app.get('/playground',
    expressPlayground({
     endpoint: '/graphql'
 })
