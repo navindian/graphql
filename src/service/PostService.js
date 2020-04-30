@@ -4,8 +4,8 @@ const HashTagRepository = require('../repository/HashtagRepository');
 const { v4 } = require('uuid');
 const AWS = require('aws-sdk');
 // Enter copied or downloaded access ID and secret key here
-const ID = 'AKIAILOBKXKXLOUJLXCA';
-const SECRET = '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';
+const ID = 'xxxxx';
+const SECRET = 'xxxxx';
 
 // The name of the bucket that you have created
 const BUCKET_NAME = 'dhivyaa';
