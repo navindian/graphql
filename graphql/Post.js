@@ -13,7 +13,7 @@ const typeDefs = gql(`
         code: Int!
         success: Boolean
         message: String
-        post: Post             
+        post: [Post]
     }
     type Post {
         id: ID!
@@ -61,12 +61,12 @@ const typeDefs = gql(`
     }
     type Query {
         getPost(id: ID!): PostResponse
-        getAllPosts: [PostResponse]
+        getAllPosts: PostResponse
         getHashTag(hashtag: ID!): HashTagResponse
     }
     type Mutation {
-        uploadPhoto(file: Upload, caption: String, hashtag: String): PostResponse
-        removePhoto(photoId:ID!, filename: String): Response
+        uploadPost(file: Upload, caption: String, hashtag: String): PostResponse
+        removePost(photoId:ID!, filename: String): Response
         likeUnlikePost(post: PostInput): PostResponse
         upsertComment(post: PostInput): PostResponse
         removeComment(post: PostInput): PostResponse
@@ -98,18 +98,18 @@ const resolvers = {
         },
     },
     Mutation: {
-        uploadPhoto: async (_parent, args) => {
+        uploadPost: async (_parent, args) => {
             const { filename, createReadStream } = await args.file;
             const { caption, hashtag } = args;
             const readStream = createReadStream();
             const postService = new PostService();
-            const response = await postService.uploadPhoto(filename, readStream, caption, hashtag);
+            const response = await postService.uploadPost(filename, readStream, caption, hashtag);
             return response;
         },
-        removePhoto: async (_parent, args) => {
+        removePost: async (_parent, args) => {
             const { photoId, filename } = args;
             const postService = new PostService();
-            const response = await postService.removePhoto(photoId, filename);
+            const response = await postService.removePost(photoId, filename);
             return response;
         },
         likeUnlikePost: async (_parent, args) => {

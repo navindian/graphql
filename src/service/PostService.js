@@ -4,13 +4,13 @@ const HashTagRepository = require('../repository/HashtagRepository');
 const { v4 } = require('uuid');
 const AWS = require('aws-sdk');
 // Enter copied or downloaded access ID and secret key here
-const ID = 'xxxxx';
-const SECRET = 'xxxxx';
+const ID = 'xxx';
+const SECRET = 'xxx';
 
 // The name of the bucket that you have created
 const BUCKET_NAME = 'dhivyaa';
 const s3 = new AWS.S3({
-    accessKeyId: ID,
+	accessKeyId: ID,
     secretAccessKey: SECRET
 });
 class PostService {
@@ -20,13 +20,24 @@ class PostService {
     }
     async getPost(id) {
         try {
+            const postDetails = [];
             const post = await this.postRepository.get(id);
-            console.log("post..",post)
+            if(post) {
+               postDetails.push(post);
+            }
+            else {
+                return {
+                    code: 404,
+                    success: false,
+                    message: "Post not found",
+                    post: postDetails 
+                }
+            }            
             return {
                 code: 200,
                 success: true,
                 message: "Post fetched successfully",
-                post 
+                post: postDetails 
             }
         }
         catch (error) {
@@ -40,7 +51,7 @@ class PostService {
                 code: 200,
                 success: true,
                 message: "Post fetched successfully",
-                posts: post.Items 
+                post: post.Items 
             }
         }
         catch (error) {
@@ -61,9 +72,10 @@ class PostService {
 
         }
     }
-    async uploadPhoto(filename, readStream, caption, hashtag) {
+    async uploadPost(filename, readStream, caption, hashtag) {
         try {
             let post;
+            let postResponse = [];
             // Setting up S3 upload parameters
             const params = {
                 Bucket: BUCKET_NAME,
@@ -79,7 +91,9 @@ class PostService {
                     url: fileUploadResponse.Location,
                     key: fileUploadResponse.Key,
                     caption: caption,
-                    createdDate: new Date().toISOString()
+                    createdDate: new Date().toISOString(),
+                    likes: {},
+                    comments: []
                 }
                 await this.postRepository.put(post);
                 if (hashtag) {
@@ -98,15 +112,15 @@ class PostService {
                     await this.hashtagRepository.put(hashtagResponse);
                 }
             }
+            postResponse.push(post);
             return {
-                code: 200,
+                code: 201,
                 success: true,
                 message: 'Post uploaded successfully',
-                post
+                post: postResponse
             }
         }
         catch (error) {
-            console.log("error", error)
             return {
                 code: 500,
                 success: false,
@@ -114,31 +128,31 @@ class PostService {
             }
         }
     }
-    async removePhoto(photoId, filename) {
+    async removePost(photoId, filename) {
         try {
-            await s3.deleteObject({
+            await this.postRepository.delete({ id: photoId });
+            const deleteResponse = await s3.deleteObject({
                 Bucket: BUCKET_NAME,
                 Key: filename
-            }).promise();
-            const deleteResponse = await this.postRepository.delete({ id: photoId });
+            }).promise();     
             if (deleteResponse) {
                 return {
                     code: 200,
                     success: true,
-                    message: 'Post deleted successfully'
+                    message: 'Post deleted successfully',
+                    post: {}
                 };
             }
         }
         catch (error) {
-
+            console.log("error",error)
         }
     }
     async likeUnlikePost(post) {
-        console.log("LIKE..", post)
         let filteredResponse, putResponse;
         try {
+            let postResponse = [];
             let getResponse = await this.postRepository.get({ id: post.id });
-            console.log("getResponse1", getResponse)
             if (getResponse && post && post.likes) {
                 getResponse.likes = getResponse.likes ? getResponse.likes : {};
                 getResponse.likes.count = getResponse.likes.count ? getResponse.likes.count : 0;
@@ -149,22 +163,21 @@ class PostService {
                 if (filteredResponse && filteredResponse.length > 0) {
                     getResponse.likes.count = getResponse.likes.count - 1;
                     getResponse.likes.employee = getResponse.likes.employee.filter((obj) => obj.id !== post.likes.employee.id);
-                    console.log("getResponse2", getResponse)
                 }
                 else {
 
                     getResponse.likes.count = getResponse.likes.count + 1;
                     getResponse.likes.employee.push(post.likes.employee);
-                    console.log("getResponse", getResponse.likes.employee)
                 }
             }
-            putResponse = await this.postRepository.put(getResponse);
+            postResponse.push(getResponse);
+            putResponse = await this.postRepository.update(getResponse, 'likes');
             if (putResponse) {
                 return {
                     code: 200,
                     success: true,
                     message: 'Post updated successfully',
-                    post: getResponse
+                    post: postResponse
                 };
             }
         }
@@ -174,20 +187,20 @@ class PostService {
     }
     async upsertComment(post) {
         try {
+            let postResponse = [];
             let getResponse = await this.postRepository.get({ id: post.id });
-            console.log("getResponse..",getResponse)
-            let filteredResponse = getResponse.comments.find((comment) => {
+            let filteredResponse = getResponse.comments ? getResponse.comments.find((comment) => {
                 if (comment.id === post.comment.id) {
                     comment.commentStatement = post.comment.commentStatement;
                     comment.createdDate = new Date().toISOString();
                     return comment;
                 }
-            });
+            }) : null;
             if (!filteredResponse) {
                 const commentId = v4();
                 post.comment.id = commentId;
                 post.comment.createdDate = new Date().toISOString();
-                if (post.comment) {
+                if (post.comment) {                    
                     if (getResponse.comments) {
                         getResponse.comments.push(post.comment)
                     }
@@ -197,41 +210,43 @@ class PostService {
                     }
                 }
             }
-            let putResponse = await this.postRepository.put(getResponse);
-            console.log("getResponse..",getResponse)
+            postResponse.push(getResponse);
+            let putResponse = await this.postRepository.update(getResponse, 'comments');            
             if (putResponse) {
                 return {
                     code: 200,
                     success: true,
                     message: 'comment added successfully',
-                    post: getResponse
+                    post: postResponse
                 };
             }
         }
         catch (error) {
-
+            console.log(error)
         }
     }
     async removeComment(post) {
         try {
             let filteredResponse;
+            let postResponse = [];
             let getResponse = await this.postRepository.get({ id: post.id });
             if (post && post.comment) {
                 filteredResponse = getResponse.comments.filter((comment) => comment.id !== post.comment.id);
             }
             getResponse.comments = filteredResponse;
-            let putResponse = await this.postRepository.put(getResponse);
+            let putResponse = await this.postRepository.update(getResponse, 'comments');
+            postResponse.push(getResponse);
             if (putResponse) {
                 return {
                     code: 200,
                     success: true,
-                    message: 'comment added successfully',
-                    post: getResponse
+                    message: 'comment removed successfully',
+                    post: postResponse
                 };
             }
         }
         catch (error) {
-
+            console.log(error)
         }
     }
 }
