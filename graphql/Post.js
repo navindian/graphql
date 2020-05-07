@@ -1,6 +1,4 @@
 const { gql } = require('apollo-server-express');
-const PostService = require('../src/service/PostService');
-
 
 // GraphQL schema
 const typeDefs = gql(`
@@ -22,12 +20,18 @@ const typeDefs = gql(`
         likes: Likes
         comments: [Comments]
         caption: String
-        createdDate: String  
+        createdDate: String
+        createdBy: Employee
     }
     type Comments {
         id: ID!
         commentStatement: String
         commentBy: Employee
+    }
+    input uploadPostInput {
+        file: Upload
+        caption: String
+        createdBy: EmployeeInput
     }
     input PostInput {        
         id: ID!
@@ -36,7 +40,7 @@ const typeDefs = gql(`
         likes: LikeInput
         comment: CommentInput
         caption: String
-        hashtag: String
+        createdBy: EmployeeInput
     }
     input CommentInput {
         id: ID
@@ -55,17 +59,12 @@ const typeDefs = gql(`
         firstName: String
         lastName: String
     }
-    type HashTagResponse {
-        id: ID!
-        posts: [PostResponse]
-    }
     type Query {
         getPost(id: ID!): PostResponse
         getAllPosts: PostResponse
-        getHashTag(hashtag: ID!): HashTagResponse
     }
     type Mutation {
-        uploadPost(file: Upload, caption: String, hashtag: String): PostResponse
+        uploadPost(post: uploadPostInput): PostResponse
         removePost(photoId:ID!, filename: String): Response
         likeUnlikePost(post: PostInput): PostResponse
         upsertComment(post: PostInput): PostResponse
@@ -80,54 +79,39 @@ const typeDefs = gql(`
 // resolver
 const resolvers = {
     Query: {
-        getPost: async (_parent, args) => {
-            const postService = new PostService();
-            const response = await postService.getPost(args);
+        getPost: async (_, args, {dataSources}) => {
+            const response = await dataSources.postService.getPost(args);
             return response;
         },
-        getAllPosts: async () => {
-            const postService = new PostService();
-            const response = await postService.getAllPosts();
-            return response;
-        },
-        getHashTag: async (_parent, args) => {
-            const { hashtag } = args;
-            const postService = new PostService();
-            const response = await postService.getHashTag({ id: hashtag });
+        getAllPosts: async (_, __, {dataSources}) => {
+            const response = await dataSources.postService.getAllPosts();
             return response;
         },
     },
     Mutation: {
-        uploadPost: async (_parent, args) => {
-            const { filename, createReadStream } = await args.file;
-            const { caption, hashtag } = args;
-            const readStream = createReadStream();
-            const postService = new PostService();
-            const response = await postService.uploadPost(filename, readStream, caption, hashtag);
+        uploadPost: async (_, args, {dataSources}) => {
+            const { post } = args;            
+            const response = await dataSources.postService.uploadPost(post);
             return response;
         },
-        removePost: async (_parent, args) => {
+        removePost: async (_, args, {dataSources}) => {
             const { photoId, filename } = args;
-            const postService = new PostService();
-            const response = await postService.removePost(photoId, filename);
+            const response = await dataSources.postService.removePost(photoId, filename);
             return response;
         },
-        likeUnlikePost: async (_parent, args) => {
+        likeUnlikePost: async (_, args, {dataSources}) => {
             const { post } = JSON.parse(JSON.stringify(args));
-            const postService = new PostService();
-            const response = await postService.likeUnlikePost(post);
+            const response = await dataSources.postService.likeUnlikePost(post);
             return response;
         },
-        upsertComment: async (_parent, args) => {
+        upsertComment: async (_, args, {dataSources}) => {
             const { post } = JSON.parse(JSON.stringify(args));
-            const postService = new PostService();
-            const response = await postService.upsertComment(post);
+            const response = await dataSources.postService.upsertComment(post);
             return response;
         },
-        removeComment: async (_parent, args) => {
+        removeComment: async (_, args, {dataSources}) => {
             const { post } = JSON.parse(JSON.stringify(args));
-            const postService = new PostService();
-            const response = await postService.removeComment(post);
+            const response = await dataSources.postService.removeComment(post);
             return response;
         }
     }
