@@ -1,47 +1,56 @@
 const dynamodbClient = require('../utils/DynamoDBClient');
 const PostRepository = require('../repository/PostRepository');
-const HashTagRepository = require('../repository/HashtagRepository');
+const logger = require('../utils/LogUtils');
 const { v4 } = require('uuid');
 const AWS = require('aws-sdk');
-// Enter copied or downloaded access ID and secret key here
-const ID = 'xxx';
-const SECRET = 'xxx';
+AWS.profile = 'awss3';
+// The name of the S3 bucket
+const BUCKET_NAME = process.argv[2];
+const credentials = new AWS.SharedIniFileCredentials({profile: 'awss3'});
+AWS.config.credentials = credentials;
+const s3 = new AWS.S3();
 
-// The name of the bucket that you have created
-const BUCKET_NAME = 'dhivyaa';
-const s3 = new AWS.S3({
-	accessKeyId: ID,
-    secretAccessKey: SECRET
-});
 class PostService {
     constructor() {
         this.postRepository = new PostRepository(dynamodbClient);
-        this.hashtagRepository = new HashTagRepository(dynamodbClient);
+        this.getPost = this.getPost.bind(this);
+        this.getAllPosts = this.getAllPosts.bind(this);
+        this.uploadPost = this.uploadPost.bind(this);
+        this.removePost = this.removePost.bind(this);
+        this.likeUnlikePost = this.likeUnlikePost.bind(this);
+        this.upsertComment = this.upsertComment.bind(this);
+        this.removeComment = this.removeComment.bind(this);
     }
     async getPost(id) {
         try {
             const postDetails = [];
             const post = await this.postRepository.get(id);
-            if(post) {
-               postDetails.push(post);
+            if (post) {
+                postDetails.push(post);
             }
             else {
                 return {
                     code: 404,
                     success: false,
                     message: "Post not found",
-                    post: postDetails 
+                    post: postDetails
                 }
-            }            
+            }
             return {
                 code: 200,
                 success: true,
                 message: "Post fetched successfully",
-                post: postDetails 
+                post: postDetails
             }
         }
         catch (error) {
-
+            logger.error('Error while fetching post');
+            return {
+                code: 500,
+                success: false,
+                message: "Error while fetching post: " + error,
+                post: null
+            }
         }
     }
     async getAllPosts() {
@@ -51,29 +60,24 @@ class PostService {
                 code: 200,
                 success: true,
                 message: "Post fetched successfully",
-                post: post.Items 
+                post: post.Items
             }
         }
         catch (error) {
-
-        }
-    }
-    async getHashTag(hashtag) {
-        try {
-            const hashtagResponse = await this.hashtagRepository.get(hashtag);
+            logger.error('Error while fetching post');
             return {
-                code: 200,
-                success: true,
-                message: "Post fetched successfully",
-                posts: hashtagResponse
+                code: 500,
+                success: false,
+                message: "Error while fetching post: " + error,
+                post: null
             }
         }
-        catch (error) {
-
-        }
     }
-    async uploadPost(filename, readStream, caption, hashtag) {
-        try {
+    async uploadPost(post) {
+        const { filename, createReadStream } = await post.file;
+        const { caption, createdBy } = post;
+        try {            
+            const readStream = createReadStream();
             let post;
             let postResponse = [];
             // Setting up S3 upload parameters
@@ -90,27 +94,13 @@ class PostService {
                     id: v4(),
                     url: fileUploadResponse.Location,
                     key: fileUploadResponse.Key,
-                    caption: caption,
+                    caption,
+                    likes: {count: 0},
+                    comments: [],
                     createdDate: new Date().toISOString(),
-                    likes: {},
-                    comments: []
+                    createdBy
                 }
                 await this.postRepository.put(post);
-                if (hashtag) {
-                    let hashtagResponse = await this.hashtagRepository.get({ id: hashtag });
-                    if (hashtagResponse) {
-                        hashtagResponse.posts = hashtagResponse.posts ? hashtagResponse.posts : [];
-                        hashtagResponse.posts.push(post);
-                    }
-                    else {
-                        hashtagResponse = {
-                            id: hashtag,
-                            posts: []
-                        };
-                        hashtagResponse.posts.push(post);
-                    }
-                    await this.hashtagRepository.put(hashtagResponse);
-                }
             }
             postResponse.push(post);
             return {
@@ -121,6 +111,7 @@ class PostService {
             }
         }
         catch (error) {
+            logger.error('Error while uploading post: ' + error)
             return {
                 code: 500,
                 success: false,
@@ -134,7 +125,7 @@ class PostService {
             const deleteResponse = await s3.deleteObject({
                 Bucket: BUCKET_NAME,
                 Key: filename
-            }).promise();     
+            }).promise();
             if (deleteResponse) {
                 return {
                     code: 200,
@@ -145,7 +136,13 @@ class PostService {
             }
         }
         catch (error) {
-            console.log("error",error)
+            logger.error('Error while deleting post');
+            return {
+                code: 500,
+                success: false,
+                message: 'Post deletion failed',
+                post: {}
+            };
         }
     }
     async likeUnlikePost(post) {
@@ -165,7 +162,6 @@ class PostService {
                     getResponse.likes.employee = getResponse.likes.employee.filter((obj) => obj.id !== post.likes.employee.id);
                 }
                 else {
-
                     getResponse.likes.count = getResponse.likes.count + 1;
                     getResponse.likes.employee.push(post.likes.employee);
                 }
@@ -176,13 +172,19 @@ class PostService {
                 return {
                     code: 200,
                     success: true,
-                    message: 'Post updated successfully',
+                    message: 'Post liked/unliked',
                     post: postResponse
                 };
             }
         }
         catch (error) {
-
+            logger.error('Error while saving like' + error);
+            return {
+                code: 500,
+                success: false,
+                message: 'Could not save your like. Please try again',
+                post: {}
+            };
         }
     }
     async upsertComment(post) {
@@ -200,7 +202,7 @@ class PostService {
                 const commentId = v4();
                 post.comment.id = commentId;
                 post.comment.createdDate = new Date().toISOString();
-                if (post.comment) {                    
+                if (post.comment) {
                     if (getResponse.comments) {
                         getResponse.comments.push(post.comment)
                     }
@@ -211,18 +213,24 @@ class PostService {
                 }
             }
             postResponse.push(getResponse);
-            let putResponse = await this.postRepository.update(getResponse, 'comments');            
+            let putResponse = await this.postRepository.update(getResponse, 'comments');
             if (putResponse) {
                 return {
                     code: 200,
                     success: true,
-                    message: 'comment added successfully',
+                    message: 'Comment saved successfully ',
                     post: postResponse
                 };
             }
         }
         catch (error) {
-            console.log(error)
+            logger.error('Error while saving comment' + error);
+            return {
+                code: 500,
+                success: false,
+                message: 'Error while saving comment. Please try again',
+                post: {}
+            };
         }
     }
     async removeComment(post) {
@@ -240,13 +248,19 @@ class PostService {
                 return {
                     code: 200,
                     success: true,
-                    message: 'comment removed successfully',
+                    message: 'Comment removed successfully',
                     post: postResponse
                 };
             }
         }
         catch (error) {
-            console.log(error)
+            logger.error('Error while removing comment ' + error);
+            return {
+                code: 500,
+                success: false,
+                message: 'Error while removing comment. Please try again',
+                post: {}
+            };
         }
     }
 }

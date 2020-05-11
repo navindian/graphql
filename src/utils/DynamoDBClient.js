@@ -2,11 +2,9 @@
 const AWS = require('aws-sdk');
 // update the region
 AWS.config.update({ region: 'ap-south-1' });
-// update the credentials
-AWS.config.update({
-    accessKeyId: 'xxx',
-    secretAccessKey: 'xxx',
-});
+AWS.profile = 'default';
+const credentials = new AWS.SharedIniFileCredentials({profile: 'default'});
+AWS.config.credentials = credentials;
 let dynamoDBClient = new AWS.DynamoDB.DocumentClient({
     region: 'localhost',
     endpoint: 'http://localhost:8000'
